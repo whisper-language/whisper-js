@@ -2,7 +2,7 @@ export default class Scope {
     parent;
     vars;
     isFunc;
-    Scope(parent,isFunc){
+    constructor(parent,isFunc){
         this.parent=parent;
         this.isFunc=isFunc;
         this.vars=[];
@@ -17,9 +17,16 @@ export default class Scope {
             this.vars[name,val];
         }
     }
-    resolve(name,isFunc){
-
-        
+    resolve(name,checkParent){
+        v=this.vars[name];
+        if(v!=undefined){
+            return v;
+        }else if(checkParent && this.parent!=undefined){
+            return this.parent.resolve(name,!this.parent.isFunc);
+        }else {
+            console.log("没有找到");
+            return undefined;
+        }
     }
     reAssign(name,val){
         if(this.vars[name]==undefined){
@@ -27,5 +34,11 @@ export default class Scope {
         }else if(this.parent!=undefined ){
             this.parent.reAssign(name,val);
         }
+    }
+    toString(){
+        ret="";
+        this.vars.forEach((v,i) => {
+            ret+=""+i+" "+" v";
+        });
     }
 }

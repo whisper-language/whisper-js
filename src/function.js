@@ -5,7 +5,7 @@ export default class Functions {
     parentScope;
     param;
     block;
-    Functions(parentScope,param,block) {
+    constructor(parentScope,param,block) {
         this.parentScope=parentScope;
         this.param=param;
         this.block=block;
