@@ -11,6 +11,7 @@ export default class TLVal {
             throw "值初始化错误";
         }
         this.v=v;
+        console.log("判断类型");
         if(!(this.isBoolean() || this.isList() || this.isNumber() || this.isString())) {
             throw "错误的数据类型"+v;
         }
@@ -50,7 +51,6 @@ export default class TLVal {
     asString(){
         return toString();
     }
-
 
     //类型判断
     isBoolean(){

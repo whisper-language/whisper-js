@@ -1,3 +1,5 @@
+import TLLexer from "./gen/TLLexer";
+import TLParser from "./gen/TLParser";
 import TLVisitor from "./gen/TLVisitor"
 import RTVal from "./returnValue";
 import TLVal from "./tlvalue";
@@ -15,8 +17,616 @@ export default class EvalVisitor extends TLVisitor {
     }
 
     visitFunctionDecl(ctx){
-        console.log("函数定义")
+        var params = ctx.idList() != null ? ctx.idList().Identifier() : [];
+        var block = ctx.block();
+        var id = ctx.Identifier().getText() + params.size();
+        // TODO: throw exception if function is already defined?
+        functions.put(id, new Function(scope, params, block));
+        return TLVal.VOID;
     }
+
+    visitList(ctx) {
+        var list = [];
+        if (ctx.exprList() != null) {
+            ctx.exprList().expression().forEach(e => {
+                list.add(this.visit(e));
+            });
+        }
+        return new TLVal(list);
+    }
+
+    visitUnaryMinusExpression(ctx){
+        var v = this.visit(ctx.expression());
+        if (!v.isNumber()) {
+            throw v+"不是数字";
+        }
+        return new TLVal(-1 * v.asDouble());
+    }
+
+    visitNotExpression(ctx) {
+        var v = this.visit(ctx.expression());
+        if (!v.isBoolean()) {
+            throw "表达式错误"+ctx;
+        }
+        return new TLVal(!v.asBoolean());
+    }
+
+    visitPowerExpression(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(Math.pow(lhs.asDouble(), rhs.asDouble()));
+        }
+        throw "^表达式错误"+ctx;
+    }
+
+    // expression op=( '*' | '/' | '%' ) expression         #multExpression
+    visitMultExpression(ctx) {
+        switch (ctx.op.getType()) {
+            case TLLexer.Multiply:
+                return multiply(ctx);
+            case TLLexer.Divide:
+                return divide(ctx);
+            case TLLexer.Modulus:
+                return modulus(ctx);
+            default:
+                throw "未知操作符: " + ctx.op.getType();
+        }
+    }
+
+    visitAddExpression(ctx) {
+        switch (ctx.op.getType()) {
+            case TLLexer.Add:
+                return add(ctx);
+            case TLLexer.Subtract:
+                return subtract(ctx);
+            default:
+                throw "未知操作符: " + ctx.op.getType();
+        }
+    }
+
+    visitCompExpression(ctx) {
+        switch (ctx.op.getType()) {
+            case TLLexer.LT:
+                return lt(ctx);
+            case TLLexer.LTEquals:
+                return ltEq(ctx);
+            case TLLexer.GT:
+                return gt(ctx);
+            case TLLexer.GTEquals:
+                return gtEq(ctx);
+            default:
+                throw "未知操作符: " + ctx.op.getType();
+        }
+    }
+
+    // expression op=( '==' | '!=' ) expression             #eqExpression
+    visitEqExpression(ctx) {
+        switch (ctx.op.getType()) {
+            case TLLexer.Equals:
+                return eq(ctx);
+            case TLLexer.NEquals:
+                return nEq(ctx);
+            default:
+                throw "未知操作符: " + ctx.op.getType();
+        }
+    }
+
+    multiply( ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs == null || rhs == null) {
+            throw "表达式错误"+ctx;
+        }
+
+        // number * number
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() * rhs.asDouble());
+        }
+
+        // string * number
+        if (lhs.isString() && rhs.isNumber()) {
+            var str="";
+            var stop = rhs.asInt();
+            for (i = 0; i < stop; i++) {
+                str=str+lhs.asString();
+            }
+            return new TLVal(str);
+        }
+
+        // list * number
+        if (lhs.isList() && rhs.isNumber()) {
+            var total = [];
+            var stop = rhs.asInt();
+            for (i = 0; i < stop; i++) {
+                total[lhs.asList()]
+            }
+            return new TLVal(total);
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    divide(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() / rhs.asDouble());
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    modulus(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() % rhs.asDouble());
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    add(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+
+        if (lhs == null || rhs == null) {
+            throw "表达式错误"+ctx;
+        }
+
+        // number + number
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() + rhs.asDouble());
+        }
+
+        // list + any
+        if (lhs.isList()) {
+            var list = lhs.asList();
+            list=[...list,...rhs];
+            return new TLVal(list);
+        }
+
+        // string + any
+        if (lhs.isString()) {
+            return new TLVal(lhs.asString() + "" + rhs.toString());
+        }
+
+        // any + string
+        if (rhs.isString()) {
+            return new TLVal(lhs.toString() + "" + rhs.asString());
+        }
+
+        return new TLVal(lhs.toString() + rhs.toString());
+    }
+
+    subtract(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() - rhs.asDouble());
+        }
+        if (lhs.isList()) {
+            var list = lhs.asList();
+            //TODO 处理删除表达式
+            list.remove(rhs);
+            return new TLVal(list);
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    gtEq(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() >= rhs.asDouble());
+        }
+        if (lhs.isString() && rhs.isString()) {
+            return new TLVal(lhs.asString().compareTo(rhs.asString()) >= 0);
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    ltEq(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() <= rhs.asDouble());
+        }
+        if (lhs.isString() && rhs.isString()) {
+            return new TLVal(lhs.asString().compareTo(rhs.asString()) <= 0);
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    gt(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() > rhs.asDouble());
+        }
+        if (lhs.isString() && rhs.isString()) {
+            return new TLVal(lhs.asString().compareTo(rhs.asString()) > 0);
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    lt(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs.isNumber() && rhs.isNumber()) {
+            return new TLVal(lhs.asDouble() < rhs.asDouble());
+        }
+        if (lhs.isString() && rhs.isString()) {
+            return new TLVal(lhs.asString().compareTo(rhs.asString()) < 0);
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    eq(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        if (lhs == null) {
+            throw "表达式错误"+ctx;
+        }
+        return new TLVal(lhs.equals(rhs));
+    }
+
+    nEq(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+        return new TLVal(!lhs.equals(rhs));
+    }
+
+
+
+    visitAndExpression(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+
+        if (!lhs.isBoolean() || !rhs.isBoolean()) {
+            throw "表达式错误"+ctx;
+        }
+        return new TLVal(lhs.asBoolean() && rhs.asBoolean());
+    }
+
+    // expression '||' expression               #orExpression
+    visitOrExpression(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+
+        if (!lhs.isBoolean() || !rhs.isBoolean()) {
+            throw "表达式错误"+ctx;
+        }
+        return new TLVal(lhs.asBoolean() || rhs.asBoolean());
+    }
+
+    // expression '?' expression ':' expression #ternaryExpression
+    visitTernaryExpression(ctx) {
+        var condition = this.visit(ctx.expression(0));
+        if (condition.asBoolean()) {
+            return this.visit(ctx.expression(1));
+        } else {
+            return this.visit(ctx.expression(2));
+        }
+    }
+
+    // expression In expression                 #inExpression
+    visitInExpression(ctx) {
+        var lhs = this.visit(ctx.expression(0));
+        var rhs = this.visit(ctx.expression(1));
+
+        if (rhs.isList()) {
+            for (var val in rhs.asList()) {
+                if (val.equals(lhs)) {
+                    return new TLVal(true);
+                }
+            }
+            return new TLVal(false);
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    // Number                                   #numberExpression
+    visitNumberExpression(ctx) {
+        return new TLVal(Double.valueOf(ctx.getText()));
+    }
+
+    // Bool                                     #boolExpression
+    visitBoolExpression(ctx) {
+        return new TLVal(Boolean.valueOf(ctx.getText()));
+    }
+
+    // Null                                     #nullExpression
+    visitNullExpression(ctx) {
+        return TLVal.NULL;
+    }
+
+    resolveIndexes(val, indexes) {
+        for (ec in indexes) {
+            var idx = this.visit(ec);
+            if (!idx.isNumber() || (!val.isList() && !val.isString())) {
+                throw "表达式错误"+ctx;
+            }
+            i = idx.asDouble().intValue();
+            if (val.isString()) {
+                val = new TLVal(val.asString().substring(i, i + 1));
+            } else {
+                val = val.asList().get(i);
+            }
+        }
+        return val;
+    }
+
+    setAtIndex(ctx, indexes, val, newVal) {
+        if (!val.isList()) {
+            throw "表达式错误"+ctx;
+        }
+        for (i = 0; i < indexes.length - 1; i++) {
+            var idx = this.visit(indexes.get(i));
+            if (!idx.isNumber()) {
+                throw "表达式错误"+ctx;
+            }
+            val = val.asList().get(idx.asDouble().intValue());
+        }
+        var idx = this.visit(indexes.get(indexes.length - 1));
+        if (!idx.isNumber()) {
+            throw "表达式错误"+ctx;
+        }
+        val.asList().set(idx.asDouble().intValue(), newVal);
+    }
+
+    // functionCall indexes?                    #functionCallExpression
+    visitFunctionCallExpression(ctx) {
+        var val = this.visit(ctx.functionCall());
+        if (ctx.indexes() != null) {
+            var exps = ctx.indexes().expression();
+            val = resolveIndexes(val, exps);
+        }
+        return val;
+    }
+
+    // list indexes?                            #listExpression
+    visitListExpression(ctx) {
+        var val = this.visit(ctx.list());
+        if (ctx.indexes() != null) {
+            var exps = ctx.indexes().expression();
+            val = resolveIndexes(val, exps);
+        }
+        return val;
+    }
+
+    // Identifier indexes?                      #identifierExpression
+    visitIdentifierExpression(ctx) {
+        var id = ctx.Identifier().getText();
+        var val = scope.resolve(id);
+
+        if (ctx.indexes() != null) {
+            var exps = ctx.indexes().expression();
+            val = resolveIndexes(val, exps);
+        }
+        return val;
+    }
+
+    // String indexes?                          #stringExpression
+    visitStringExpression(ctx) {
+        var text = ctx.getText();
+        text = text.substring(1, text.length() - 1).replaceAll("\\\\(.)", "$1");
+        var val = new TLVal(text);
+        if (ctx.indexes() != null) {
+            var exps = ctx.indexes().expression();
+            val = resolveIndexes(val, exps);
+        }
+        return val;
+    }
+
+    // '(' expression ')' indexes?              #expressionExpression
+    visitExpressionExpression( ctx) {
+        var val = this.visit(ctx.expression());
+        if (ctx.indexes() != null) {
+            var exps = ctx.indexes().expression();
+            val = resolveIndexes(val, exps);
+        }
+        return val;
+    }
+
+    // Input '(' String? ')'                    #inputExpression
+    // visitInputExpression(ctx) {
+    //     var inputString = ctx.String();
+    //     try {
+    //         if (inputString != null) {
+    //             String text = inputString.getText();
+    //             text = text.substring(1, text.length() - 1).replaceAll("\\\\(.)", "$1");
+    //             return new TLVal(new String(Files.readAllBytes(Paths.get(text))));
+    //         } else {
+    //             BufferedReader buffer = new BufferedReader(new InputStreamReader(System.in));
+    //             return new TLVal(buffer.readLine());
+    //         }
+    //     } catch (IOException e) {
+    //         throw new RuntimeException(e);
+    //     }
+    // }
+
+
+    // assignment
+    // : Identifier indexes? '=' expression
+    // ;
+    visitAssignment(ctx) {
+        var newVal = this.visit(ctx.expression());
+        if (ctx.indexes() != null) {
+            var val = scope.resolve(ctx.Identifier().getText());
+            var exps = ctx.indexes().expression();
+            setAtIndex(ctx, exps, val, newVal);
+        } else {
+            var id = ctx.Identifier().getText();
+            scope.assign(id, newVal);
+        }
+        return TLVal.VOID;
+    }
+
+    visitBuildInIdentifierFunctionCall(ctx) {
+        var params = ctx.exprList() != null ? ctx.exprList().expression() : [];
+        var id = ctx.BuildIdentifier().getText();
+        var function1;
+        if ((function1 = buildFunction.get(id)) != null) {
+            var args = [];
+            for ( param in params) {
+                args.add(this.visit(param));
+            }
+            return function1.invoke(args);
+        }
+        throw "表达式错误"+ctx;
+    }
+
+    // Identifier '(' exprList? ')' #identifierFunctionCall
+    visitIdentifierFunctionCall(ctx) {
+        var params = ctx.exprList() != null ? ctx.exprList().expression() : [];
+        var id = ctx.Identifier().getText() + params.size();
+        var function1;
+
+        if ((function1 = functions.get(id)) != null) {
+            var args = [];
+            for (Tparam in params) {
+                args.add(this.visit(param));
+            }
+            return function1.invoke(args, functions, buildFunction);
+        } else {
+            throw "表达式错误"+ctx;
+        }
+
+    }
+
+    // Println '(' expression? ')'  #printlnFunctionCall
+    visitPrintlnFunctionCall(ctx) {
+        if (ctx.expression() != null) {
+            System.out.println(this.visit(ctx.expression()));
+        } else {
+            System.out.println();
+        }
+        return TLVal.VOID;
+    }
+
+    // Print '(' expression ')'     #printFunctionCall
+    visitPrintFunctionCall(ctx) {
+        System.out.print(this.visit(ctx.expression()));
+        return TLVal.VOID;
+    }
+
+    // Assert '(' expression ')'    #assertFunctionCall
+    visitAssertFunctionCall(ctx) {
+        var value = this.visit(ctx.expression());
+
+        if (!value.isBoolean()) {
+            throw "表达式错误"+ctx;
+        }
+
+        if (!value.asBoolean()) {
+            throw "Assert failed:" + ctx.expression().getText() +":" + ctx.start.getLine()+")";
+        }
+
+        return TLVal.VOID;
+    }
+
+    // Size '(' expression ')'      #sizeFunctionCall
+    visitSizeFunctionCall(ctx) {
+        var value = this.visit(ctx.expression());
+
+        if (value.isString()) {
+            return new TLVal(value.asString().length());
+        }
+
+        if (value.isList()) {
+            return new TLVal(value.asList().size());
+        }
+
+        throw "表达式错误"+ctx;
+    }
+
+    // ifStatement
+    //  : ifStat elseIfStat* elseStat? End
+    //  ;
+    //
+    // ifStat
+    //  : If expression Do block
+    //  ;
+    //
+    // elseIfStat
+    //  : Else If expression Do block
+    //  ;
+    //
+    // elseStat
+    //  : Else Do block
+    //  ;
+    visitIfStatement(ctx) {
+
+        // if ...
+        if (this.visit(ctx.ifStat().expression()).asBoolean()) {
+            return this.visit(ctx.ifStat().block());
+        }
+
+        // else if ...
+        for (i = 0; i < ctx.elseIfStat().length; i++) {
+            if (this.visit(ctx.elseIfStat(i).expression()).asBoolean()) {
+                return this.visit(ctx.elseIfStat(i).block());
+            }
+        }
+
+        // else ...
+        if (ctx.elseStat() != null) {
+            return this.visit(ctx.elseStat().block());
+        }
+
+        return TLVal.VOID;
+    }
+
+    // block
+    // : (statement | functionDecl)* (Return expression)?
+    // ;
+    visitBlock(ctx) {
+
+        scope = new Scope(scope, false); // create new local scope
+        for (fdx in ctx.functionDecl()) {
+            this.visit(fdx);
+        }
+        for (sx in ctx.statement()) {
+            this.visit(sx);
+        }
+        var ex=new TLParser.ExpressionContext();
+        if ((ex = ctx.expression()) != null) {
+            returnValue.value = this.visit(ex);
+            scope = scope.parent();
+            throw returnValue;
+        }
+        scope = scope.parent();
+        return TLVal.VOID;
+    }
+
+    // forStatement
+    // : For Identifier '=' expression To expression OBrace block CBrace
+    // ;
+    visitForStatement( ctx) {
+        var start = this.visit(ctx.expression(0)).asDouble().intValue();
+        var stop = this.visit(ctx.expression(1)).asDouble().intValue();
+        for (i = start; i <= stop; i++) {
+            scope.assign(ctx.Identifier().getText(), new TLVal(i));
+            var returnValue = this.visit(ctx.block());
+            if (returnValue != TLVal.VOID) {
+                return returnValue;
+            }
+        }
+        return TLVal.VOID;
+    }
+
+    // whileStatement
+    // : While expression OBrace block CBrace
+    // ;
+    visitWhileStatement(ctx) {
+        while (this.visit(ctx.expression()).asBoolean()) {
+            varreturnValue = this.visit(ctx.block());
+            if (returnValue != TLVal.VOID) {
+                return returnValue;
+            }
+        }
+        return TLVal.VOID;
+    }
+
 
     visitPrintlnFunctionCall(ctx){
         if (ctx.expression() != null) {
@@ -25,6 +635,7 @@ export default class EvalVisitor extends TLVisitor {
         console.log("\r\n");
         return TLVal.VOID;
     }
+
     visitPrintFunctionCall(ctx){
         if (ctx.expression() != null) {
             console.log(this.visit(ctx.expression()))
@@ -59,7 +670,9 @@ export default class EvalVisitor extends TLVisitor {
         return new TLVal(ctx.getText().toLocaleLowerCase()=="true");
     }
     visitNumberExpression(ctx){
+        console.log("访问数字");
         return new TLVal(parseFloat(ctx.getText()));
     }
+   
 
 }

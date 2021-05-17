@@ -7,7 +7,7 @@ import EvalVisitor from '../src/evalvisitor';
 test('whisper-language test', () => {
     const fs = require('fs')
     try {
-        const input = fs.readFileSync('case/boolExpr.whl', 'utf8')
+        const input = fs.readFileSync('case/main.whl', 'utf8')
         const chars = new antlr4.InputStream(input);
         const lexer = new TLLexer(chars);
         const tokens  = new antlr4.CommonTokenStream(lexer);
