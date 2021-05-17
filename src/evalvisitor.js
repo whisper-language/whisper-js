@@ -2,6 +2,7 @@ import TLLexer from "./gen/TLLexer";
 import TLParser from "./gen/TLParser";
 import TLVisitor from "./gen/TLVisitor"
 import RTVal from "./returnValue";
+import Scope from "./scope";
 import TLVal from "./tlvalue";
 
 export default class EvalVisitor extends TLVisitor {
@@ -60,9 +61,24 @@ export default class EvalVisitor extends TLVisitor {
         throw "^表达式错误"+ctx;
     }
 
+    visitCompExpression(ctx) {
+        switch (ctx.op.type) {
+            case TLLexer.LT:
+                return this.lt(ctx);
+            case TLLexer.LTEquals:
+                return this.ltEq(ctx);
+            case TLLexer.GT:
+                return this.gt(ctx);
+            case TLLexer.GTEquals:
+                return this.gtEq(ctx);
+            default:
+                throw "未知比较操作符: " + ctx.op.type;
+        }
+    }
+
     // expression op=( '*' | '/' | '%' ) expression         #multExpression
     visitMultExpression(ctx) {
-        switch (ctx.op.getType()) {
+        switch (ctx.op.type) {
             case TLLexer.Multiply:
                 return multiply(ctx);
             case TLLexer.Divide:
@@ -70,45 +86,32 @@ export default class EvalVisitor extends TLVisitor {
             case TLLexer.Modulus:
                 return modulus(ctx);
             default:
-                throw "未知操作符: " + ctx.op.getType();
+                throw "未知操作符 1: " + ctx.op.type;
         }
     }
 
     visitAddExpression(ctx) {
-        switch (ctx.op.getType()) {
+        switch (ctx.op.type) {
             case TLLexer.Add:
                 return add(ctx);
             case TLLexer.Subtract:
                 return subtract(ctx);
             default:
-                throw "未知操作符: " + ctx.op.getType();
+                throw "未知操作符 2: " + ctx.op.type;
         }
     }
 
-    visitCompExpression(ctx) {
-        switch (ctx.op.getType()) {
-            case TLLexer.LT:
-                return lt(ctx);
-            case TLLexer.LTEquals:
-                return ltEq(ctx);
-            case TLLexer.GT:
-                return gt(ctx);
-            case TLLexer.GTEquals:
-                return gtEq(ctx);
-            default:
-                throw "未知操作符: " + ctx.op.getType();
-        }
-    }
+
 
     // expression op=( '==' | '!=' ) expression             #eqExpression
     visitEqExpression(ctx) {
-        switch (ctx.op.getType()) {
+        switch (ctx.op.type) {
             case TLLexer.Equals:
                 return eq(ctx);
             case TLLexer.NEquals:
                 return nEq(ctx);
             default:
-                throw "未知操作符: " + ctx.op.getType();
+                throw "未知操作符: " + ctx.op.type;
         }
     }
 
@@ -396,7 +399,7 @@ export default class EvalVisitor extends TLVisitor {
     // Identifier indexes?                      #identifierExpression
     visitIdentifierExpression(ctx) {
         var id = ctx.Identifier().getText();
-        var val = scope.resolve(id);
+        var val = this.scope.resolve(id);
 
         if (ctx.indexes() != null) {
             var exps = ctx.indexes().expression();
@@ -418,7 +421,7 @@ export default class EvalVisitor extends TLVisitor {
     }
 
     // '(' expression ')' indexes?              #expressionExpression
-    visitExpressionExpression( ctx) {
+    visitExpressionExpression(ctx){
         var val = this.visit(ctx.expression());
         if (ctx.indexes() != null) {
             var exps = ctx.indexes().expression();
@@ -456,7 +459,7 @@ export default class EvalVisitor extends TLVisitor {
             setAtIndex(ctx, exps, val, newVal);
         } else {
             var id = ctx.Identifier().getText();
-            scope.assign(id, newVal);
+            this.scope.assign(id, newVal);
         }
         return TLVal.VOID;
     }
@@ -496,16 +499,16 @@ export default class EvalVisitor extends TLVisitor {
     // Println '(' expression? ')'  #printlnFunctionCall
     visitPrintlnFunctionCall(ctx) {
         if (ctx.expression() != null) {
-            System.out.println(this.visit(ctx.expression()));
+            console.log(this.visit(ctx.expression()));
         } else {
-            System.out.println();
+            console.log();
         }
         return TLVal.VOID;
     }
 
     // Print '(' expression ')'     #printFunctionCall
     visitPrintFunctionCall(ctx) {
-        System.out.print(this.visit(ctx.expression()));
+        console.log(this.visit(ctx.expression()));
         return TLVal.VOID;
     }
 
@@ -581,20 +584,23 @@ export default class EvalVisitor extends TLVisitor {
     // ;
     visitBlock(ctx) {
 
-        scope = new Scope(scope, false); // create new local scope
-        for (fdx in ctx.functionDecl()) {
+        var scope = new Scope(this.scope, false); // create new local scope
+
+        ctx.functionDecl().forEach(fdx=>{
             this.visit(fdx);
-        }
-        for (sx in ctx.statement()) {
+        })
+      
+        ctx.statement().forEach(sx=>{
             this.visit(sx);
-        }
+        })
+
         var ex=new TLParser.ExpressionContext();
         if ((ex = ctx.expression()) != null) {
             returnValue.value = this.visit(ex);
             scope = scope.parent();
             throw returnValue;
         }
-        scope = scope.parent();
+        this.scope = this.scope.parent;
         return TLVal.VOID;
     }
 
@@ -648,8 +654,8 @@ export default class EvalVisitor extends TLVisitor {
         if (!v.isBoolean()) {
             throw "不是boolean表达式";
         }
-        if (!value.asBoolean()) {
-            throw "无法转换为bool表达式:" + ctx.expression().getText() + " ("+ctx.start.getInputStream().getSourceName()+":" + ctx.start.getLine()+")";
+        if (!v.asBoolean()) {
+            throw "无法转换为bool表达式:" + ctx.expression().getText() + " ("+""+":" + ctx.start.line+")";
         }
         return TLVal.VOID;
     }
@@ -670,7 +676,6 @@ export default class EvalVisitor extends TLVisitor {
         return new TLVal(ctx.getText().toLocaleLowerCase()=="true");
     }
     visitNumberExpression(ctx){
-        console.log("访问数字");
         return new TLVal(parseFloat(ctx.getText()));
     }
    

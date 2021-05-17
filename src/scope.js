@@ -14,17 +14,21 @@ export default class Scope {
         if(this.resolve(name,!this.isFunc)!=undefined){
             this.reAssign(name,val);
         }else{
-            this.vars[name,val];
+            this.vars[name]=val;
         }
     }
     resolve(name,checkParent){
-        v=this.vars[name];
+        var v=this.vars[name];
+
+        // console.log("没有找到"+(checkParent && this.parent!=undefined));
         if(v!=undefined){
             return v;
         }else if(checkParent && this.parent!=undefined){
             return this.parent.resolve(name,!this.parent.isFunc);
         }else {
-            console.log("没有找到");
+            
+            // console.log("没有找到"+checkParent+ "" +this.parent);
+
             return undefined;
         }
     }
