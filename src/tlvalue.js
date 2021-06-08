@@ -1,7 +1,11 @@
 export default class TLVal {
+    
     static NULL=new TLVal("null").constructor1();
+    
     static VOID=new TLVal("void").constructor1();
+
     v;
+    
     constructor1(){
         this.v={};
         return this;

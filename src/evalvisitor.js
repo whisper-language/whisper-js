@@ -1,11 +1,11 @@
-import TLLexer from "./gen/TLLexer";
-import TLParser from "./gen/TLParser";
-import TLVisitor from "./gen/TLVisitor"
+import WhisperLanguageLexer  from "./gen/WhisperLanguageLexer";
+import WhisperLanguageParser from "./gen/WhisperLanguageParser";
+import WhisperLanguageVisitor from "./gen/WhisperLanguageVisitor"
 import RTVal from "./returnValue";
 import Scope from "./scope";
 import TLVal from "./tlvalue";
 
-export default class EvalVisitor extends TLVisitor {
+export default class EvalVisitor extends WhisperLanguageVisitor {
     static returnValue=new RTVal();
     scope;
     functions;
@@ -26,7 +26,7 @@ export default class EvalVisitor extends TLVisitor {
         return TLVal.VOID;
     }
 
-    visitList(ctx) {
+    visitList_Alias(ctx) {
         var list = [];
         if (ctx.exprList() != null) {
             ctx.exprList().expression().forEach(e => {
@@ -58,57 +58,59 @@ export default class EvalVisitor extends TLVisitor {
         if (lhs.isNumber() && rhs.isNumber()) {
             return new TLVal(Math.pow(lhs.asDouble(), rhs.asDouble()));
         }
-        throw "^表达式错误"+ctx;
+        throw "** 表达式错误"+ctx;
     }
 
+    // 比较操作符
     visitCompExpression(ctx) {
         switch (ctx.op.type) {
-            case TLLexer.LT:
+            case WhisperLanguageLexer.LT:
                 return this.lt(ctx);
-            case TLLexer.LTEquals:
+            case WhisperLanguageLexer.LTEquals:
                 return this.ltEq(ctx);
-            case TLLexer.GT:
+            case WhisperLanguageLexer.GT:
                 return this.gt(ctx);
-            case TLLexer.GTEquals:
+            case WhisperLanguageLexer.GTEquals:
                 return this.gtEq(ctx);
             default:
-                throw "未知比较操作符: " + ctx.op.type;
+                throw "未知比较操作符: " + ctx.op.text;
         }
     }
 
     // expression op=( '*' | '/' | '%' ) expression         #multExpression
     visitMultExpression(ctx) {
         switch (ctx.op.type) {
-            case TLLexer.Multiply:
-                return multiply(ctx);
-            case TLLexer.Divide:
-                return divide(ctx);
-            case TLLexer.Modulus:
-                return modulus(ctx);
+            case WhisperLanguageLexer.Multiply:
+                return this.multiply(ctx);
+            case WhisperLanguageLexer.Divide:
+                return this.divide(ctx);
+            case WhisperLanguageLexer.Modulus:
+                return this.modulus(ctx);
             default:
-                throw "未知操作符 1: " + ctx.op.type;
+                throw "未知操作符 1: " + ctx.op.text;
         }
     }
 
+    // 加减操作符
     visitAddExpression(ctx) {
         switch (ctx.op.type) {
-            case TLLexer.Add:
+            case WhisperLanguageLexer.Add:
                 return add(ctx);
-            case TLLexer.Subtract:
+            case WhisperLanguageLexer.Subtract:
                 return subtract(ctx);
             default:
-                throw "未知操作符 2: " + ctx.op.type;
+                throw "未知操作符 2: " + ctx.op.text;
         }
     }
 
 
-
+    //赋值操作符
     // expression op=( '==' | '!=' ) expression             #eqExpression
     visitEqExpression(ctx) {
         switch (ctx.op.type) {
-            case TLLexer.Equals:
+            case WhisperLanguageLexer.Equals:
                 return eq(ctx);
-            case TLLexer.NEquals:
+            case WhisperLanguageLexer.NEquals:
                 return nEq(ctx);
             default:
                 throw "未知操作符: " + ctx.op.type;
@@ -292,6 +294,7 @@ export default class EvalVisitor extends TLVisitor {
 
     // expression '||' expression               #orExpression
     visitOrExpression(ctx) {
+        console.log("或者表达式")
         var lhs = this.visit(ctx.expression(0));
         var rhs = this.visit(ctx.expression(1));
 
@@ -594,7 +597,7 @@ export default class EvalVisitor extends TLVisitor {
             this.visit(sx);
         })
 
-        var ex=new TLParser.ExpressionContext();
+        var ex=new WhisperLanguageParser.ExpressionContext();
         if ((ex = ctx.expression()) != null) {
             returnValue.value = this.visit(ex);
             scope = scope.parent();
@@ -644,7 +647,7 @@ export default class EvalVisitor extends TLVisitor {
 
     visitPrintFunctionCall(ctx){
         if (ctx.expression() != null) {
-            console.log(this.visit(ctx.expression()))
+            console.info(this.visit(ctx.expression()).v)
         }
         return TLVal.VOID;
     }
@@ -672,7 +675,7 @@ export default class EvalVisitor extends TLVisitor {
         return v;
     }
     visitBoolExpression(ctx){
-        //字符串转换成bool
+        console.log("访问bool表达式")
         return new TLVal(ctx.getText().toLocaleLowerCase()=="true");
     }
     visitNumberExpression(ctx){
